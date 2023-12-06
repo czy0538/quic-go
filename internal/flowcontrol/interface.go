@@ -23,6 +23,7 @@ type StreamFlowController interface {
 	UpdateHighestReceived(offset protocol.ByteCount, final bool) error
 	// Abandon should be called when reading from the stream is aborted early,
 	// and there won't be any further calls to AddBytesRead.
+	// 行为上看就是直接让bytesRead = highestReceived
 	Abandon()
 }
 

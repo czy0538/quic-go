@@ -58,7 +58,6 @@ func clientMain() error {
 	if err != nil {
 		return err
 	}
-
 	stream, err := conn.OpenStreamSync(context.Background())
 	if err != nil {
 		return err

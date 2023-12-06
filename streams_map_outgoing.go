@@ -77,6 +77,11 @@ func (m *outgoingStreamsMap[T]) OpenStreamSync(ctx context.Context) (T, error) {
 		return *new(T), err
 	}
 
+	// 检查当前等待队列情况，如果没有其他等待创建的流，则创建，否则等待。
+	// 注意这里检查 nextStream <= m.maxStream
+	// 但是在定义里有如下注释
+	// // stream ID of the stream returned by OpenStream(Sync)
+	// 但是从后续代码看，该id 是一个递增的数值，从协议出发，估计这是去掉最低两位后的数值
 	if len(m.openQueue) == 0 && m.nextStream <= m.maxStream {
 		return m.openStream(), nil
 	}
@@ -117,8 +122,13 @@ func (m *outgoingStreamsMap[T]) OpenStreamSync(ctx context.Context) (T, error) {
 }
 
 func (m *outgoingStreamsMap[T]) openStream() T {
+	// 在初始化结构体时传入该函数，
+	// streams_map.go:103
+	// T 为 sendStreamI
 	s := m.newStream(m.nextStream)
+
 	m.streams[m.nextStream] = s
+	// 递增，产生下一个streamID，这个推测是不包括最低两位的
 	m.nextStream++
 	return s
 }

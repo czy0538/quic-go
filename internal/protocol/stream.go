@@ -27,6 +27,7 @@ const (
 
 // StreamID calculates the stream ID.
 func (s StreamNum) StreamID(stype StreamType, pers Perspective) StreamID {
+	// 从1开始使用，初始化时netStream为1，因此0是无效的。
 	if s == 0 {
 		return InvalidStreamID
 	}

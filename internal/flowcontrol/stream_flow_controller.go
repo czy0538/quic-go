@@ -99,12 +99,16 @@ func (c *streamFlowController) UpdateHighestReceived(offset protocol.ByteCount, 
 
 func (c *streamFlowController) AddBytesRead(n protocol.ByteCount) {
 	c.mutex.Lock()
+
+	// bytesRead+=n
 	c.baseFlowController.addBytesRead(n)
+	// 计算是否需要扩大接收窗口
 	shouldQueueWindowUpdate := c.shouldQueueWindowUpdate()
 	c.mutex.Unlock()
 	if shouldQueueWindowUpdate {
 		c.queueWindowUpdate()
 	}
+	// 连接级别
 	c.connection.AddBytesRead(n)
 }
 
@@ -130,8 +134,10 @@ func (c *streamFlowController) shouldQueueWindowUpdate() bool {
 	return !c.receivedFinalOffset && c.hasWindowUpdate()
 }
 
+// updates the receive window, if necessary
 func (c *streamFlowController) GetWindowUpdate() protocol.ByteCount {
 	// If we already received the final offset for this stream, the peer won't need any additional flow control credit.
+	// 如果已经收到了FIN，不用增加接收窗口了
 	if c.receivedFinalOffset {
 		return 0
 	}

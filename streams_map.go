@@ -99,9 +99,11 @@ func (m *streamsMap) initMaps() {
 		m.maxIncomingBidiStreams,
 		m.sender.queueControlFrame,
 	)
+	// 初始化单向发送stream
 	m.outgoingUniStreams = newOutgoingStreamsMap(
 		protocol.StreamTypeUni,
 		func(num protocol.StreamNum) sendStreamI {
+			// 根据类型和本端的角色，计算出了stream id
 			id := num.StreamID(protocol.StreamTypeUni, m.perspective)
 			return newSendStream(id, m.sender, m.newFlowController(id))
 		},

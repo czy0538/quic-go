@@ -83,6 +83,9 @@ func (s *sendStream) Write(p []byte) (int, error) {
 	// Concurrent use of Write is not permitted (and doesn't make any sense),
 	// but sometimes people do it anyway.
 	// Make sure that we only execute one call at any given time to avoid hard to debug failures.
+
+	// 使用channel模拟的一个互斥锁，每次只能有一个goroutine执行write
+
 	s.writeOnce <- struct{}{}
 	defer func() { <-s.writeOnce }()
 
@@ -120,8 +123,11 @@ func (s *sendStream) Write(p []byte) (int, error) {
 		// This allows us to return Write() when all data but x bytes have been sent out.
 		// When the user now calls Close(), this is much more likely to happen before we popped that last STREAM frame,
 		// allowing us to set the FIN bit on that frame (instead of sending an empty STREAM frame with FIN).
+		// 计算是否要分片
 		if s.canBufferStreamFrame() && len(s.dataForWriting) > 0 {
+			// 不需要分片
 			if s.nextFrame == nil {
+				// 将数据放入到一个帧上
 				f := wire.GetStreamFrame()
 				f.Offset = s.writeOffset
 				f.StreamID = s.streamID
@@ -138,6 +144,7 @@ func (s *sendStream) Write(p []byte) (int, error) {
 			bytesWritten = len(p)
 			copied = true
 		} else {
+			// 需要分片
 			bytesWritten = len(p) - len(s.dataForWriting)
 			deadline = s.deadline
 			if !deadline.IsZero() {
@@ -157,10 +164,12 @@ func (s *sendStream) Write(p []byte) (int, error) {
 		}
 
 		s.mutex.Unlock()
+		// 添加到活跃的发送队列
 		if !notifiedSender {
 			s.sender.onHasStreamData(s.streamID) // must be called without holding the mutex
 			notifiedSender = true
 		}
+		// 检测是否copy完成
 		if copied {
 			s.mutex.Lock()
 			break

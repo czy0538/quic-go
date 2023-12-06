@@ -9,6 +9,7 @@ import (
 )
 
 // byteInterval is an interval from one ByteCount to the other
+// 记录了开始和结束的偏移量
 type byteInterval struct {
 	Start protocol.ByteCount
 	End   protocol.ByteCount
@@ -28,22 +29,26 @@ type frameSorterEntry struct {
 type frameSorter struct {
 	queue   map[protocol.ByteCount]frameSorterEntry
 	readPos protocol.ByteCount
-	gaps    *list.List[byteInterval]
+	gaps    *list.List[byteInterval] // 双链表
 }
 
 var errDuplicateStreamData = errors.New("duplicate stream data")
 
+// 初始化frameSorter
 func newFrameSorter() *frameSorter {
 	s := frameSorter{
+		// 建立一个双链表，返回的是一个根节点。
 		gaps:  list.NewWithPool[byteInterval](&byteIntervalElementPool),
 		queue: make(map[protocol.ByteCount]frameSorterEntry),
 	}
+	// 插入头结点
 	s.gaps.PushFront(byteInterval{Start: 0, End: protocol.MaxByteCount})
 	return &s
 }
 
 func (s *frameSorter) Push(data []byte, offset protocol.ByteCount, doneCb func()) error {
 	err := s.push(data, offset, doneCb)
+	// 如果是重复插入数据，仍旧正常返回。推测该情况为例如重传导致的重复。
 	if err == errDuplicateStreamData {
 		if doneCb != nil {
 			doneCb()
@@ -58,9 +63,13 @@ func (s *frameSorter) push(data []byte, offset protocol.ByteCount, doneCb func()
 		return errDuplicateStreamData
 	}
 
+	// 计算要存入数据的开始和结束的位置
 	start := offset
 	end := offset + protocol.ByteCount(len(data))
 
+	// 如果当前元素的结束位置，小于已有的上一个元素的开始位置，说明是重复插入数据
+	// 在新建时候插入了一个[0,protocol.MaxByteCount]的节点，因此第一个push的时候
+	// 肯定是成功的，不用处理nil的问题
 	if end <= s.gaps.Front().Value.Start {
 		return errDuplicateStreamData
 	}
@@ -68,6 +77,7 @@ func (s *frameSorter) push(data []byte, offset protocol.ByteCount, doneCb func()
 	startGap, startsInGap := s.findStartGap(start)
 	endGap, endsInGap := s.findEndGap(startGap, end)
 
+	// 判断偏移量是否在一个节点中
 	startGapEqualsEndGap := startGap == endGap
 
 	if (startGapEqualsEndGap && end <= startGap.Value.Start) ||
@@ -85,6 +95,7 @@ func (s *frameSorter) push(data []byte, offset protocol.ByteCount, doneCb func()
 	pos := start
 	var hasReplacedAtLeastOne bool
 	for {
+		// 根据开始位置，查找是否已经存在以该开始位置为开始的数据
 		oldEntry, ok := s.queue[pos]
 		if !ok {
 			break
@@ -178,10 +189,16 @@ func (s *frameSorter) push(data []byte, offset protocol.ByteCount, doneCb func()
 }
 
 func (s *frameSorter) findStartGap(offset protocol.ByteCount) (*list.Element[byteInterval], bool) {
+	// 遍历链表
 	for gap := s.gaps.Front(); gap != nil; gap = gap.Next() {
+		// 如果offset在gap的范围内，返回gap
+		// gap.Start|offset|gap.End
+		// 第一次插入时候肯定是返回的头结点，后续就会修改的
 		if offset >= gap.Value.Start && offset <= gap.Value.End {
 			return gap, true
 		}
+		// 如果offset在当前节点之前，返回该节点。
+		// offset|gap.Start
 		if offset < gap.Value.Start {
 			return gap, false
 		}
@@ -191,6 +208,7 @@ func (s *frameSorter) findStartGap(offset protocol.ByteCount) (*list.Element[byt
 
 func (s *frameSorter) findEndGap(startGap *list.Element[byteInterval], offset protocol.ByteCount) (*list.Element[byteInterval], bool) {
 	for gap := startGap; gap != nil; gap = gap.Next() {
+		// gap.Value.Start|offset|gap.Value.End
 		if offset >= gap.Value.Start && offset < gap.Value.End {
 			return gap, true
 		}

@@ -166,7 +166,7 @@ func (s *receiveStream) readImpl(p []byte) (bool /*stream completed */, int, err
 		if s.readPosInFrame > len(s.currentFrame) {
 			return false, bytesRead, fmt.Errorf("BUG: readPosInFrame (%d) > frame.DataLen (%d) in stream.Read", s.readPosInFrame, len(s.currentFrame))
 		}
-
+		// currentFrame是从哪里来的？
 		m := copy(p[bytesRead:], s.currentFrame[s.readPosInFrame:])
 		s.readPosInFrame += m
 		bytesRead += m
@@ -174,6 +174,8 @@ func (s *receiveStream) readImpl(p []byte) (bool /*stream completed */, int, err
 		// when a RESET_STREAM was received, the flow controller was already
 		// informed about the final byteOffset for this stream
 		if s.resetRemotelyErr == nil {
+			// 告诉流控又有多少steam又consumend多少data。
+			// 可能触发接收窗口的更新。
 			s.flowController.AddBytesRead(protocol.ByteCount(m))
 		}
 
@@ -195,6 +197,7 @@ func (s *receiveStream) dequeueNextFrame() {
 	if s.currentFrameDone != nil {
 		s.currentFrameDone()
 	}
+	// currentFrame的唯一来源
 	offset, s.currentFrame, s.currentFrameDone = s.frameQueue.Pop()
 	s.currentFrameIsLast = offset+protocol.ByteCount(len(s.currentFrame)) >= s.finalOffset
 	s.readPosInFrame = 0
@@ -230,6 +233,7 @@ func (s *receiveStream) handleStreamFrame(frame *wire.StreamFrame) error {
 	completed, err := s.handleStreamFrameImpl(frame)
 	s.mutex.Unlock()
 
+	// 抛弃所有未读的帧，提前终止读取
 	if completed {
 		s.flowController.Abandon()
 		s.sender.onStreamCompleted(s.streamID)
@@ -239,6 +243,7 @@ func (s *receiveStream) handleStreamFrame(frame *wire.StreamFrame) error {
 
 func (s *receiveStream) handleStreamFrameImpl(frame *wire.StreamFrame) (bool /* completed */, error) {
 	maxOffset := frame.Offset + frame.DataLen()
+	// 增大流控的最大值
 	if err := s.flowController.UpdateHighestReceived(maxOffset, frame.Fin); err != nil {
 		return false, err
 	}
