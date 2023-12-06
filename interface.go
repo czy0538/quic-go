@@ -346,4 +346,6 @@ type ConnectionState struct {
 	Version VersionNumber
 	// GSO says if generic segmentation offload is used
 	GSO bool
+	// LatestRTT is the latest RTT measurement
+	LatestRTT time.Duration
 }
